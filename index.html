@@ -152,7 +152,7 @@ button.stat{cursor:pointer}
 .satz{font-size:1.28rem;line-height:1.7;margin:6px 0 14px;font-weight:500}
 .luecke{display:inline-block;min-width:3.2em;border-bottom:3px dashed var(--farbe,var(--haupt));text-align:center;color:var(--leise);padding:0 4px}
 .luecke.ok{color:var(--ok);border-bottom-style:solid;border-color:var(--ok);font-weight:800}
-.luecke.korr{color:var(--nok);border-bottom-style:solid;border-color:var(--nok);font-weight:800}
+.luecke.korr{color:var(--ok);background:var(--okbg);border-radius:6px 6px 0 0;border-bottom-style:solid;border-color:var(--ok);font-weight:800}
 .optionen{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
 .optionen.lang{grid-template-columns:1fr}
 .option{border:2px solid var(--rand);border-bottom-width:5px;background:var(--karte2);border-radius:16px;padding:12px 14px;cursor:pointer;font-size:1.12rem;font-weight:700;text-align:center;min-height:56px;position:relative;transition:transform .08s,border-color .15s}
@@ -287,6 +287,22 @@ select.eingabe{font-size:1rem}
 .pruef-nein{color:var(--nok);font-weight:800}
 .pruefnr{font-family:ui-monospace,Consolas,monospace;font-weight:800;letter-spacing:.04em}
 body.gross-schrift main{zoom:1.18}
+/* Suche, Sprungleiste, Gruppen, NEU, Bereichsseite */
+.suche{margin:2px 0 10px}
+.sprung{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 8px;margin:0 0 4px;scrollbar-width:thin}
+.sprung-k{flex:none;border:2px solid var(--rand);background:var(--karte);border-radius:99px;padding:6px 12px;font-weight:800;font-size:.9rem;cursor:pointer;color:var(--farbe)}
+.sprung-k:hover{border-color:var(--farbe)}
+.kachel-gruppe{grid-column:1/-1;font-weight:850;font-size:.92rem;color:var(--farbe);margin:6px 2px -2px;letter-spacing:.01em}
+.kachel-gruppe:first-child{margin-top:0}
+.neu-info{display:inline-block;margin-left:8px;background:linear-gradient(135deg,#f43f5e,#f97316);color:#fff;font-size:.68rem;font-weight:900;border-radius:99px;padding:1px 8px;vertical-align:middle}
+.typzeile{display:flex;align-items:center;gap:10px;margin:4px 0 6px}
+.typzeile .typwahl{flex:1;font-size:.95rem;padding:8px 10px}
+.regel-klapp summary{cursor:pointer;list-style:none}
+.regel-klapp summary b{display:inline;margin:0}
+.regel-klapp summary::-webkit-details-marker{display:none}
+.regel-klapp summary::after{content:" ▾";color:var(--leise)}
+.regel-klapp[open] summary::after{content:" ▴"}
+.regel-klapp[open] summary{margin-bottom:4px}
 .fuss{margin-top:30px;color:var(--leise);font-size:.9rem}
 .fuss .knopfreihe .knopf{flex:0 1 auto}
 
@@ -2519,7 +2535,7 @@ const STUFEN = [
 ];
 const STUFE = {}; STUFEN.forEach(s => { STUFE[s.k] = s; });
 const RUNDE = 10;
-const VERSION = '2.3';
+const VERSION = '2.4';
 const VERSION_DATUM = '19.11.2026';
 const ONLINE_ADRESSE = 'https://deutsch-ueben.github.io/wortarena/';
 const KEY = 'sprachspiel-fortschritt-v1';
@@ -3060,27 +3076,50 @@ function loesungsKnoten(a) {
 function start() {
   R = null; DU = null;
   const anzAbz = ABZEICHEN.filter(z => F.abzeichen[z.id]).length;
-  if (!F.zu) { F.zu = {}; if (F.runden > 0) D.welten.forEach(w => { F.zu[w.id] = true; }); }
+  if (!F.zu) { F.zu = {}; D.welten.forEach(w => { F.zu[w.id] = true; }); }
   const welten = D.welten.map(w => {
     const ids = weltIds(w.id), zu = !!F.zu[w.id];
     const sterne = ids.reduce((s, id) => s + (F.bereiche[id] ? F.bereiche[id].sterne : 0), 0);
+    const neuAnz = ids.filter(istNeu).length;
     const auf = el('button', {class: 'welt-auf', type: 'button', 'aria-expanded': zu ? 'false' : 'true',
       onclick: () => { F.zu[w.id] = !F.zu[w.id]; speichere(); start(); requestAnimationFrame(() => { const k = document.getElementById('welt-' + w.id); if (k) k.scrollIntoView({block: 'nearest'}); }); }},
       el('span', {class: 'pfeil', 'aria-hidden': 'true'}, '▼'),
       el('span', null, el('h2', null, w.icon + ' ' + w.name),
-        el('span', {class: 'welt-info'}, ids.length + ' Bereiche · ★ ' + sterne + ' von ' + ids.length * 3 + (zu ? ' · antippen zum Öffnen' : ''))));
+        el('span', {class: 'welt-info'}, ids.length + ' Bereiche · ★ ' + sterne + ' von ' + ids.length * 3 + (zu ? ' · antippen zum Öffnen' : '')),
+        neuAnz ? el('span', {class: 'neu-info'}, neuAnz + ' neu') : null));
+    let inhalt = null;
+    if (!zu) {
+      const gruppen = (GRUPPEN[w.id] || []).map(([name, liste]) => [name, liste.filter(id => ids.includes(id))]).filter(g => g[1].length);
+      const vergeben = new Set(gruppen.flatMap(g => g[1]));
+      const rest = ids.filter(id => !vergeben.has(id));
+      if (rest.length && gruppen.length) gruppen.push(['Weitere', rest]);
+      inhalt = el('div', {class: 'kacheln'}, gruppen.length
+        ? gruppen.map(([name, liste]) => [el('div', {class: 'kachel-gruppe'}, name), liste.map(id => kachel(BER[id]))])
+        : ids.map(id => kachel(BER[id])));
+    }
     return el('section', {class: 'karte w-' + w.id + (zu ? ' zu' : ''), id: 'welt-' + w.id},
     el('div', {class: 'welt-kopf'}, auf,
       el('button', {class: 'knopf mini', type: 'button', onclick: () => stufenSeite(ids)}, 'Alles gemischt')),
-    zu ? null : el('div', {class: 'kacheln'}, ids.map(id => BER[id]).map(b => {
-      const s = F.bereiche[b.id];
-      return el('button', {class: 'kachel', type: 'button', onclick: () => stufenSeite([b.id])},
-        s ? null : el('span', {class: 'neu'}, 'NEU'),
-        el('span', {class: 'ic'}, b.icon),
-        el('span', null, el('span', {class: 'nm'}, b.name), el('br'),
-          el('span', {class: 'sterne'}, sterneText(s ? s.sterne : 0)),
-          s ? el('span', {class: 'leise klein'}, '  ' + s.runden + (s.runden === 1 ? ' Runde' : ' Runden')) : null));
-    })));
+    inhalt);
+  });
+  const springen = id => { F.zu[id] = false; speichere(); start(); requestAnimationFrame(() => { const k = document.getElementById('welt-' + id); if (k) k.scrollIntoView({block: 'start', behavior: 'smooth'}); }); };
+  const sprung = el('nav', {class: 'sprung', 'aria-label': 'Zu einer Welt springen'},
+    D.welten.map(w => el('button', {class: 'sprung-k w-' + w.id, type: 'button', onclick: () => springen(w.id)}, w.icon + ' ' + (KURZNAME[w.id] || w.name))));
+  const weltenBox = el('div', {id: 'welten'}, welten);
+  const trefferBox = el('section', {class: 'karte', hidden: true});
+  const suche = el('input', {class: 'eingabe suche', type: 'search', placeholder: '🔍 Bereich suchen, z. B. Beistrich, Barock, Pronomen', 'aria-label': 'Bereich suchen', autocomplete: 'off'});
+  suche.addEventListener('input', () => {
+    let q = suche.value.trim().toLowerCase();
+    if (q.length < 2) { trefferBox.hidden = true; weltenBox.hidden = false; return; }
+    q = q.replace(/^komma/, 'beistrich').replace(/^fürwort/, 'pronomen').replace(/^zeitwort/, 'verb').replace(/^hauptwort/, 'nomen');
+    const norm = s => s.toLowerCase();
+    const imName = D.bereiche.filter(b => norm(b.name).includes(q));
+    const imText = D.bereiche.filter(b => !imName.includes(b) && norm(b.regel).includes(q));
+    const treffer = imName.concat(imText).slice(0, 24);
+    trefferBox.replaceChildren(
+      el('h2', {style: 'font-size:1.1rem;margin-bottom:10px'}, treffer.length ? treffer.length + (treffer.length === 1 ? ' Bereich gefunden' : ' Bereiche gefunden') : 'Nichts gefunden'),
+      treffer.length ? el('div', {class: 'kacheln'}, treffer.map(b => kachel(b, true))) : el('p', {class: 'leise'}, 'Versuch ein anderes Wort, z. B. „Komma“ heißt hier „Beistrich“.'));
+    trefferBox.hidden = false; weltenBox.hidden = true;
   });
   const letzte = (F.zuletzt || []).filter(z => z.ids.every(id => BER[id]) && STUFE[z.k]);
   const zuletztBox = letzte.length ? el('section', {class: 'karte'},
@@ -3113,17 +3152,20 @@ function start() {
         el('div', {class: 'xp'}, el('div', {style: 'width:' + Math.round(lv.anteil * 100) + '%'})),
         el('div', {class: 'xp-text'}, gruss))),
     avatarWahl,
-    el('div', {class: 'statistik'},
+    (F.runden > 0 || F.punkte > 0) ? el('div', {class: 'statistik'},
       el('div', {class: 'stat'}, el('b', null, '⭐ ' + F.punkte), 'Punkte'),
       el('div', {class: 'stat'}, el('b', null, '🔥 ' + F.besteSerie), 'beste Serie'),
-      el('button', {class: 'stat', type: 'button', onclick: abzeichenSeite}, el('b', null, '🏅 ' + anzAbz + '/' + ABZEICHEN.length), 'Abzeichen')),
+      el('button', {class: 'stat', type: 'button', onclick: abzeichenSeite}, el('b', null, '🏅 ' + anzAbz + '/' + ABZEICHEN.length), 'Abzeichen')) : null,
     el('div', {class: 'aktionen'},
       el('button', {class: 'aktion a-duell', type: 'button', onclick: duellSeite}, el('span', {class: 'ai'}, '⚔️'), 'Duell', el('small', null, '2–4 Spieler')),
       el('button', {class: 'aktion a-code', type: 'button', onclick: codeSeite}, el('span', {class: 'ai'}, '🔑'), 'Challenge', el('small', null, 'Code eingeben')),
       el('button', {class: 'aktion a-mix', type: 'button', onclick: mischungSeite}, el('span', {class: 'ai'}, '🧪'), 'Mix', el('small', null, 'eigene Mischung')),
       el('button', {class: 'aktion a-heft', type: 'button', onclick: heftSeite}, el('span', {class: 'ai'}, '📒'), 'Fehlerheft', el('small', null, heftAnz ? heftAnz + ' zum Üben' : 'noch leer'))),
     zuletztBox,
-    welten,
+    suche,
+    sprung,
+    trefferBox,
+    weltenBox,
     el('div', {class: 'fuss'},
       el('div', {class: 'knopfreihe'},
         el('button', {class: 'knopf mini', type: 'button', onclick: abzeichenSeite}, '🏅 Abzeichen ansehen'),
@@ -3132,6 +3174,32 @@ function start() {
       el('p', null, '🔒 Dein Fortschritt wird nur in diesem Browser auf diesem Gerät gespeichert. Es wird nichts verschickt, es gibt keine Anmeldung.'),
       el('p', {class: 'klein'}, 'Wortarena · Version ' + VERSION + ' vom ' + VERSION_DATUM + ' · ' + D.bereiche.length + ' Bereiche, ' + D.bereiche.reduce((s, b) => s + b.aufgaben.length, 0) + ' Aufgaben'))
   );
+}
+
+/* Bereiche, die in den letzten Versionen dazugekommen sind (Schild „NEU“, solange noch nicht gespielt, bis NEU_BIS) */
+const NEU_BEREICHE = ['medien', 'werbung', 'kommun', 'pronomen', 'adverb', 'modus', 'attrarten', 'textgr', 'wandel', 'themen'];
+const NEU_BIS = '2027-02-28';
+function istNeu(id) { return NEU_BEREICHE.includes(id) && !F.bereiche[id] && new Date().toISOString().slice(0, 10) <= NEU_BIS; }
+/* Zwischenüberschriften innerhalb großer Welten */
+const GRUPPEN = {
+  gr: [['Wortarten', ['wortart', 'pronomen', 'adverb', 'genus', 'vergl']],
+    ['Sätze und Satzglieder', ['satzglied', 'satzbau', 'satzart', 'gliedsatz', 'attribut', 'attrarten', 'wortstell', 'kongruenz', 'fall', 'praep', 'feste']],
+    ['Verb', ['tempus', 'zeit', 'passiv', 'konj', 'modus']],
+    ['Text und Verknüpfung', ['verbind', 'textgr']]],
+  ws: [['Wortschatz', ['syn', 'fremd', 'rede', 'oe', 'themen', 'wandel']],
+    ['Medien und Kommunikation', ['medien', 'werbung', 'kommun']]]
+};
+const KURZNAME = {rs: 'Rechtschreibung', gr: 'Grammatik', ws: 'Wortschatz', gat: 'Gattungen', lg: 'Literaturgeschichte'};
+function kachel(b, mitWelt) {
+  const s = F.bereiche[b.id];
+  const w = D.welten.find(x => x.id === b.welt);
+  return el('button', {class: 'kachel' + (mitWelt ? ' w-' + b.welt : ''), type: 'button', onclick: () => stufenSeite([b.id])},
+    istNeu(b.id) ? el('span', {class: 'neu'}, 'NEU') : null,
+    el('span', {class: 'ic'}, b.icon),
+    el('span', null, el('span', {class: 'nm'}, b.name), el('br'),
+      mitWelt && w ? [el('span', {class: 'leise klein'}, w.name), el('br')] : null,
+      el('span', {class: 'sterne'}, sterneText(s ? s.sterne : 0)),
+      s ? el('span', {class: 'leise klein'}, '  ' + s.runden + (s.runden === 1 ? ' Runde' : ' Runden')) : null));
 }
 
 function zuruecksetzen() {
@@ -3220,10 +3288,10 @@ function lehrkraftUebung(l) {
       el('h2', null, zielName(l.ids)),
       el('p', {class: 'leise'}, (l.typ ? TYPNAME[l.typ] : 'Alle Übungsarten') + ' · Stufe ' + STUFE[l.k].name + ' · ' +
         Math.min(RUNDE, l.ids.reduce((s, id) => s + BER[id].aufgaben.filter(a => !l.typ || typVon(a) === l.typ).length, 0)) + ' Aufgaben'),
-      l.ids.length === 1 ? el('div', {class: 'regel'}, el('b', null, '💡 Merke'), BER[l.ids[0]].regel) : null,
       el('div', {class: 'knopfreihe'},
         el('button', {class: 'knopf haupt', type: 'button', onclick: () => { linkWeg(); starteRunde(l.ids, l.k, {typ: l.typ}); }}, 'Los geht’s! 🚀'),
-        el('button', {class: 'knopf', type: 'button', onclick: () => { linkWeg(); start(); }}, 'Zur Startseite'))));
+        el('button', {class: 'knopf', type: 'button', onclick: () => { linkWeg(); start(); }}, 'Zur Startseite')),
+      l.ids.length === 1 ? regelKlapp(BER[l.ids[0]].regel) : null));
 }
 
 function stufenSeite(ids, vonLehrkraft) {
@@ -3233,26 +3301,28 @@ function stufenSeite(ids, vonLehrkraft) {
   const zaehl = {};
   ids.forEach(id => BER[id].aufgaben.forEach(a => { const t = typVon(a); zaehl[t] = (zaehl[t] || 0) + 1; }));
   let typ = null;
-  const chips = [];
-  const typBox = el('div', {class: 'typen'}, [null].concat(TYPREIHE.filter(t => zaehl[t])).map(t => {
-    const c = el('button', {class: 'typ' + (t === null ? ' an' : ''), type: 'button'},
-      t === null ? '🎲 Alle Übungsarten' : TYPNAME[t] + ' (' + zaehl[t] + ')');
-    c.addEventListener('click', () => { typ = t; chips.forEach(x => x.classList.toggle('an', x === c)); });
-    chips.push(c);
-    return c;
-  }));
+  const typWahl = el('select', {class: 'eingabe typwahl', 'aria-label': 'Übungsart'},
+    el('option', {value: ''}, '🎲 Alle Übungsarten gemischt'),
+    TYPREIHE.filter(t => zaehl[t]).map(t => el('option', {value: t}, TYPNAME[t] + ' (' + zaehl[t] + ' Aufgaben)')));
+  typWahl.addEventListener('change', () => { typ = typWahl.value || null; });
   zeige(
     el('button', {class: 'knopf mini', type: 'button', onclick: start}, '← Zurück'),
     el('div', {class: 'karte' + (welt ? ' w-' + welt : '')},
       vonLehrkraft ? el('div', {class: 'lehrkraft'}, '📌 Übung von deiner Lehrkraft') : null,
       el('h2', null, zielName(ids)),
       el('p', {class: 'leise klein'}, anzahlAufgaben(ids) + ' Aufgaben · eine Runde hat ' + RUNDE + ' Aufgaben'),
-      einzel ? el('div', {class: 'regel'}, el('b', null, '💡 Merke'), einzel.regel) : null,
-      el('h3', null, '1. Welche Übungsart?'), typBox,
-      el('h3', null, '2. Wähle deine Stufe – dann geht’s los:'),
+      einzel ? regelKlapp(einzel.regel) : null,
+      el('h3', null, 'Wähle deine Stufe – dann geht’s los:'),
       stufenWahl(F.stufe || 'L', k => { F.stufe = k; speichere(); starteRunde(ids, k, {typ}); }).node,
+      el('label', {class: 'typzeile'}, el('span', {class: 'leise klein'}, 'Übungsart:'), typWahl),
       linkBox(() => ids, () => typ))
   );
+}
+function regelKlapp(text) {
+  const kurz = text.length <= 180;
+  return el('details', {class: 'regel regel-klapp', open: kurz},
+    el('summary', null, el('b', null, '💡 Merke'), kurz ? null : el('span', {class: 'leise klein'}, ' – antippen zum Lesen')),
+    el('div', null, text));
 }
 
 function mischungSeite() {
@@ -3449,6 +3519,7 @@ function ergebnisSeite() {
     teile.push(el('div', {class: 'rueck gut'}, el('p', {class: 'rueck-titel'}, 'Neues Abzeichen!'),
       neu.map(z => el('p', null, z.icon + ' ', el('strong', null, z.name), ' – ' + z.text))));
   }
+  const spaeter = [];
   if (R.art !== 'wiederholung') {
     const code = zielCode(R.ids) + '-' + R.k + (R.typ ? TYPCODE[R.typ] : '') + '-' + R.seed + '-' + R.punkte;
     const kopieren = el('button', {class: 'knopf mini', type: 'button'}, 'Code kopieren');
@@ -3456,13 +3527,13 @@ function ergebnisSeite() {
       try { navigator.clipboard.writeText(code).then(() => { kopieren.textContent = 'Kopiert ✓'; }, () => { kopieren.textContent = 'Bitte abschreiben'; }); }
       catch (e) { kopieren.textContent = 'Bitte abschreiben'; }
     });
-    teile.push(el('div', {class: 'hinweis'},
+    spaeter.push(el('div', {class: 'hinweis'},
       el('b', null, '🤝 Challenge-Code'), el('br'),
       el('span', {class: 'code'}, code), ' ', kopieren,
       el('p', {class: 'klein'}, 'Sag diesen Code einer Mitschülerin oder einem Mitschüler. Mit „Challenge-Code eingeben“ bekommen sie genau dieselben Aufgaben und sehen, ob sie deine Punkte schlagen.')));
   }
   const r0 = R;
-  teile.push(speicherBox(nm => protokoll(r0, nm), endung => dateiName(zielCode(r0.ids), r0.ende, endung), true));
+  spaeter.unshift(speicherBox(nm => protokoll(r0, nm), endung => dateiName(zielCode(r0.ids), r0.ende, endung), true));
   const knoepfe = el('div', {class: 'knopfreihe'});
   if (R.fehler.length) {
     knoepfe.append(el('button', {class: 'knopf haupt', type: 'button', onclick: () => {
@@ -3482,6 +3553,7 @@ function ergebnisSeite() {
         f.deine && typVon(f.e.a) !== 'komma' ? el('div', {class: 'leise klein'}, 'Deine Antwort: ' + f.deine) : null,
         f.e.a.e ? el('div', {class: 'klein'}, '💡 ' + f.e.a.e) : null))));
   }
+  teile.push(...spaeter);
   const lv = levelInfo(F.punkte);
   const xpBalken = el('div', {style: 'width:' + Math.round(levelInfo(F.punkte - R.punkte).nr === lv.nr ? levelInfo(F.punkte - R.punkte).anteil * 100 : 0) + '%'});
   teile.splice(5, 0, el('div', {class: 'lvlbox'},
@@ -4010,11 +4082,11 @@ function siegerehrung() {
     el('h2', null, gleichstand ? 'Unentschieden an der Spitze!' : liste[0].name + ' gewinnt!'),
     el('p', {class: 'leise klein'}, zielName(cfg.ids) + ' · Stufe ' + STUFE[cfg.k].name + ' · ' + datumJetzt()),
     el('ol', {class: 'podest'}, zeilen),
-    speicherBox(() => protokollDuell(du), endung => dateiName('Duell', du.ende, endung), false),
     el('div', {class: 'knopfreihe'},
       el('button', {class: 'knopf haupt', type: 'button', onclick: () => starteDuell(cfg)}, '🔁 Revanche (neue Aufgaben)'),
       el('button', {class: 'knopf', type: 'button', onclick: duellSeite}, 'Duell ändern'),
-      el('button', {class: 'knopf', type: 'button', onclick: start}, 'Zur Übersicht'))));
+      el('button', {class: 'knopf', type: 'button', onclick: start}, 'Zur Übersicht')),
+    speicherBox(() => protokollDuell(du), endung => dateiName('Duell', du.ende, endung), false)));
 }
 
 /* ---------- Abzeichen ---------- */
